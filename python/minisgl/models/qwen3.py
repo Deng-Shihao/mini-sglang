@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Tuple
+from typing import TYPE_CHECKING, Optional, Tuple
 
 import torch
 from minisgl.core import get_global_ctx
 from minisgl.layers import BaseOP, OPList, ParallelLMHead, RMSNormFused, VocabParallelEmbedding
+from minisgl.layers.quantization import LinearMethodBase
 from minisgl.utils import nvtx_annotate
 
 from .base import BaseLLMModel
@@ -16,9 +17,25 @@ if TYPE_CHECKING:
 
 
 class Qwen3DecoderLayer(BaseOP):
-    def __init__(self, config: ModelConfig, layer_id: int):
-        self.self_attn = Qwen3Attn(config, layer_id, has_qk_norm=True)
-        self.mlp = Qwen3MLP(config)
+    def __init__(
+        self,
+        config: ModelConfig,
+        layer_id: int,
+        linear_method: Optional[LinearMethodBase] = None,
+        params_dtype: torch.dtype = torch.float16,
+    ):
+        self.self_attn = Qwen3Attn(
+            config,
+            layer_id,
+            has_qk_norm=True,
+            linear_method=linear_method,
+            params_dtype=params_dtype,
+        )
+        self.mlp = Qwen3MLP(
+            config,
+            linear_method=linear_method,
+            params_dtype=params_dtype,
+        )
         self.input_layernorm = RMSNormFused(
             size=config.hidden_size,
             eps=config.rms_norm_eps,
@@ -42,13 +59,26 @@ class Qwen3DecoderLayer(BaseOP):
 
 
 class Qwen3Model(BaseOP):
-    def __init__(self, config: ModelConfig):
+    def __init__(
+        self,
+        config: ModelConfig,
+        linear_method: Optional[LinearMethodBase] = None,
+        params_dtype: torch.dtype = torch.float16,
+    ):
         self.embed_tokens = VocabParallelEmbedding(
             num_embeddings=config.vocab_size,
             embedding_dim=config.hidden_size,
         )
         self.layers = OPList(
-            [Qwen3DecoderLayer(config, layer_id) for layer_id in range(config.num_layers)]
+            [
+                Qwen3DecoderLayer(
+                    config,
+                    layer_id,
+                    linear_method=linear_method,
+                    params_dtype=params_dtype,
+                )
+                for layer_id in range(config.num_layers)
+            ]
         )
         self.norm = RMSNormFused(
             size=config.hidden_size,
@@ -64,8 +94,21 @@ class Qwen3Model(BaseOP):
 
 
 class Qwen3ForCausalLM(BaseLLMModel):
-    def __init__(self, config: ModelConfig):
-        self.model = Qwen3Model(config)
+    def __init__(
+        self,
+        config: ModelConfig,
+        params_dtype: torch.dtype = torch.float16,
+    ):
+        # Get linear method from quantization config if present
+        linear_method = None
+        if config.quantization_config is not None:
+            linear_method = config.quantization_config.get_linear_method()
+        
+        self.model = Qwen3Model(
+            config,
+            linear_method=linear_method,
+            params_dtype=params_dtype,
+        )
         self.lm_head = ParallelLMHead(
             num_embeddings=config.vocab_size,
             embedding_dim=config.hidden_size,
@@ -81,3 +124,4 @@ class Qwen3ForCausalLM(BaseLLMModel):
 
 
 __all__ = ["Qwen3ForCausalLM"]
+

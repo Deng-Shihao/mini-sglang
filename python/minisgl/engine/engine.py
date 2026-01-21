@@ -138,9 +138,14 @@ class Engine:
                 for k, v in self.model.state_dict().items()
             }
         else:
+            # Get pack_factor from quantization config if AWQ
+            pack_factor = 1
+            if config.model_config.quantization_config is not None:
+                pack_factor = getattr(config.model_config.quantization_config, 'pack_factor', 1)
+            
             return {
                 k: v.to(self.dtype)
-                for k, v in load_hf_weight(config.model_path, self.device).items()
+                for k, v in load_hf_weight(config.model_path, self.device, pack_factor=pack_factor).items()
             }
 
     def _determine_num_pages(self, old_free_memory: int, config: EngineConfig) -> int:

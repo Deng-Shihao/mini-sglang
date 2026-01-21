@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
+import torch
 from minisgl.layers import (
     AttentionLayer,
     BaseOP,
@@ -12,19 +13,24 @@ from minisgl.layers import (
     RMSNorm,
     silu_and_mul,
 )
+from minisgl.layers.quantization import LinearMethodBase
 from minisgl.models import ModelConfig
 from minisgl.utils import nvtx_annotate
 
-if TYPE_CHECKING:
-    import torch
-
 
 class GatedMLP(BaseOP):
-    def __init__(self, config: ModelConfig):
+    def __init__(
+        self,
+        config: ModelConfig,
+        linear_method: Optional[LinearMethodBase] = None,
+        params_dtype: torch.dtype = torch.float16,
+    ):
         self.gate_up_proj = LinearColParallelMerged(
             config.hidden_size,
             [config.intermediate_size, config.intermediate_size],
             has_bias=False,
+            linear_method=linear_method,
+            params_dtype=params_dtype,
         )
 
         match config.hidden_act:
@@ -37,6 +43,8 @@ class GatedMLP(BaseOP):
             config.intermediate_size,
             config.hidden_size,
             has_bias=False,
+            linear_method=linear_method,
+            params_dtype=params_dtype,
         )
 
     @nvtx_annotate("MLP")
@@ -56,6 +64,8 @@ class RopeAttn(BaseOP):
         *,
         has_attn_bias: bool = False,
         has_qk_norm: bool = False,
+        linear_method: Optional[LinearMethodBase] = None,
+        params_dtype: torch.dtype = torch.float16,
     ):
         head_dim = config.head_dim
         self.qkv_proj = LinearQKVMerged(
@@ -64,6 +74,8 @@ class RopeAttn(BaseOP):
             num_qo_heads=config.num_qo_heads,
             num_kv_heads=config.num_kv_heads,
             has_bias=has_attn_bias,
+            linear_method=linear_method,
+            params_dtype=params_dtype,
         )
         self.has_qk_norm = has_qk_norm
         if has_qk_norm:
@@ -85,6 +97,8 @@ class RopeAttn(BaseOP):
             head_dim * config.num_qo_heads,
             config.hidden_size,
             has_bias=False,
+            linear_method=linear_method,
+            params_dtype=params_dtype,
         )
 
     @nvtx_annotate("MHA")
@@ -96,3 +110,4 @@ class RopeAttn(BaseOP):
 
 
 __all__ = ["GatedMLP", "RopeAttn"]
+
