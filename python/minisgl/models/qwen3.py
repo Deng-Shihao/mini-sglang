@@ -22,19 +22,16 @@ class Qwen3DecoderLayer(BaseOP):
         config: ModelConfig,
         layer_id: int,
         linear_method: Optional[LinearMethodBase] = None,
-        params_dtype: torch.dtype = torch.float16,
     ):
         self.self_attn = Qwen3Attn(
             config,
             layer_id,
             has_qk_norm=True,
             linear_method=linear_method,
-            params_dtype=params_dtype,
         )
         self.mlp = Qwen3MLP(
             config,
             linear_method=linear_method,
-            params_dtype=params_dtype,
         )
         self.input_layernorm = RMSNormFused(
             size=config.hidden_size,
@@ -63,7 +60,6 @@ class Qwen3Model(BaseOP):
         self,
         config: ModelConfig,
         linear_method: Optional[LinearMethodBase] = None,
-        params_dtype: torch.dtype = torch.float16,
     ):
         self.embed_tokens = VocabParallelEmbedding(
             num_embeddings=config.vocab_size,
@@ -75,7 +71,6 @@ class Qwen3Model(BaseOP):
                     config,
                     layer_id,
                     linear_method=linear_method,
-                    params_dtype=params_dtype,
                 )
                 for layer_id in range(config.num_layers)
             ]
@@ -97,7 +92,6 @@ class Qwen3ForCausalLM(BaseLLMModel):
     def __init__(
         self,
         config: ModelConfig,
-        params_dtype: torch.dtype = torch.float16,
     ):
         # Get linear method from quantization config if present
         linear_method = None
@@ -107,7 +101,6 @@ class Qwen3ForCausalLM(BaseLLMModel):
         self.model = Qwen3Model(
             config,
             linear_method=linear_method,
-            params_dtype=params_dtype,
         )
         self.lm_head = ParallelLMHead(
             num_embeddings=config.vocab_size,

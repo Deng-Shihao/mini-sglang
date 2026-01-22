@@ -19,14 +19,12 @@ class UnquantizedLinearMethod(LinearMethodBase):
         self.separate_bias_add = separate_bias_add
 
     def create_weights(
-        self, input_size: int, output_size: int, params_dtype: torch.dtype
+        self, input_size: int, output_size: int
     ) -> Dict[str, torch.Tensor]:
         weight = Parameter(
             torch.empty(
                 output_size,
                 input_size,
-                device=torch.cuda.current_device(),
-                dtype=params_dtype,
             ),
             requires_grad=False,
         )

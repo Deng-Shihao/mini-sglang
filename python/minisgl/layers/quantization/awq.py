@@ -79,7 +79,7 @@ class AWQLinearMethod(LinearMethodBase):
         self.quant_config = quant_config
 
     def create_weights(
-        self, input_size: int, output_size: int, params_dtype: torch.dtype
+        self, input_size: int, output_size: int
     ) -> Dict[str, torch.Tensor]:
         if input_size % self.quant_config.group_size != 0:
             raise ValueError(
@@ -135,7 +135,6 @@ class AWQLinearMethod(LinearMethodBase):
                 input_size // self.quant_config.group_size,
                 output_size,
                 device="cuda",
-                dtype=params_dtype,
             ),
             requires_grad=False,
         )

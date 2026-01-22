@@ -22,7 +22,6 @@ class _LinearTPImpl(BaseOP):
         local_osize: int,
         has_bias: bool,
         linear_method: Optional[LinearMethodBase] = None,
-        params_dtype: torch.dtype = torch.float16,
     ):
         self.full_input_size = full_isize
         self.full_output_size = full_osize
@@ -30,7 +29,7 @@ class _LinearTPImpl(BaseOP):
         self.local_output_size = local_osize
         self._linear_method = linear_method or UnquantizedLinearMethod()
         self._weights: Dict[str, torch.Tensor] = self._linear_method.create_weights(
-            local_isize, local_osize, params_dtype
+            local_isize, local_osize
         )
 
         # Expose weights as attributes for state_dict compatibility
@@ -41,7 +40,7 @@ class _LinearTPImpl(BaseOP):
         for name, tensor in self._weights.items():
             setattr(self, name, tensor)
 
-        self.bias = torch.empty(local_osize, dtype=params_dtype) if has_bias else None
+        self.bias = torch.empty(local_osize) if has_bias else None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Sync weight dict with potentially reloaded attributes
@@ -57,7 +56,6 @@ class LinearColParallelMerged(_LinearTPImpl):
         output_sizes: List[int],
         has_bias: bool,
         linear_method: Optional[LinearMethodBase] = None,
-        params_dtype: torch.dtype = torch.float16,
     ):
         # check that all output sizes are divisible by tp_size
         tp_info = get_tp_info()
@@ -71,7 +69,6 @@ class LinearColParallelMerged(_LinearTPImpl):
             tp_output_size,
             has_bias,
             linear_method,
-            params_dtype,
         )
 
 
@@ -84,7 +81,6 @@ class LinearQKVMerged(_LinearTPImpl):
         num_kv_heads: int,
         has_bias: bool,
         linear_method: Optional[LinearMethodBase] = None,
-        params_dtype: torch.dtype = torch.float16,
     ):
         tp_info = get_tp_info()
 
@@ -101,7 +97,6 @@ class LinearQKVMerged(_LinearTPImpl):
             local_osize,
             has_bias,
             linear_method,
-            params_dtype,
         )
 
 
@@ -112,7 +107,6 @@ class LinearOProj(_LinearTPImpl):
         output_size: int,
         has_bias: bool,
         linear_method: Optional[LinearMethodBase] = None,
-        params_dtype: torch.dtype = torch.float16,
     ):
         tp_info = get_tp_info()
         full_isize = input_size
@@ -128,7 +122,6 @@ class LinearOProj(_LinearTPImpl):
             local_osize,
             has_bias,
             linear_method,
-            params_dtype,
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -148,7 +141,6 @@ class LinearRowParallel(_LinearTPImpl):
         output_size: int,
         has_bias: bool,
         linear_method: Optional[LinearMethodBase] = None,
-        params_dtype: torch.dtype = torch.float16,
     ):
         tp_info = get_tp_info()
         local_input_size = divide_even(input_size, tp_info.size)
@@ -162,7 +154,6 @@ class LinearRowParallel(_LinearTPImpl):
             local_output_size,
             has_bias,
             linear_method,
-            params_dtype,
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

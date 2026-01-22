@@ -22,18 +22,15 @@ class LlamaDecoderLayer(BaseOP):
         config: ModelConfig,
         layer_id: int,
         linear_method: Optional[LinearMethodBase] = None,
-        params_dtype: torch.dtype = torch.float16,
     ):
         self.self_attn = LlamaAttn(
             config,
             layer_id,
             linear_method=linear_method,
-            params_dtype=params_dtype,
         )
         self.mlp = LlamaMLP(
             config,
             linear_method=linear_method,
-            params_dtype=params_dtype,
         )
         self.input_layernorm = RMSNormFused(
             size=config.hidden_size,
@@ -64,7 +61,6 @@ class LlamaModel(BaseOP):
         self,
         config: ModelConfig,
         linear_method: Optional[LinearMethodBase] = None,
-        params_dtype: torch.dtype = torch.float16,
     ):
         self.embed_tokens = VocabParallelEmbedding(
             num_embeddings=config.vocab_size,
@@ -76,7 +72,6 @@ class LlamaModel(BaseOP):
                     config,
                     layer_id,
                     linear_method=linear_method,
-                    params_dtype=params_dtype,
                 )
                 for layer_id in range(config.num_layers)
             ]
@@ -98,7 +93,6 @@ class LlamaForCausalLM(BaseLLMModel):
     def __init__(
         self,
         config: ModelConfig,
-        params_dtype: torch.dtype = torch.float16,
     ):
         # Get linear method from quantization config if present
         linear_method = None
@@ -108,7 +102,6 @@ class LlamaForCausalLM(BaseLLMModel):
         self.model = LlamaModel(
             config,
             linear_method=linear_method,
-            params_dtype=params_dtype,
         )
         self.lm_head = ParallelLMHead(
             num_embeddings=config.vocab_size,

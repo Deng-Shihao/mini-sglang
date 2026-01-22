@@ -23,14 +23,12 @@ class GatedMLP(BaseOP):
         self,
         config: ModelConfig,
         linear_method: Optional[LinearMethodBase] = None,
-        params_dtype: torch.dtype = torch.float16,
     ):
         self.gate_up_proj = LinearColParallelMerged(
             config.hidden_size,
             [config.intermediate_size, config.intermediate_size],
             has_bias=False,
             linear_method=linear_method,
-            params_dtype=params_dtype,
         )
 
         match config.hidden_act:
@@ -44,7 +42,6 @@ class GatedMLP(BaseOP):
             config.hidden_size,
             has_bias=False,
             linear_method=linear_method,
-            params_dtype=params_dtype,
         )
 
     @nvtx_annotate("MLP")
@@ -65,7 +62,6 @@ class RopeAttn(BaseOP):
         has_attn_bias: bool = False,
         has_qk_norm: bool = False,
         linear_method: Optional[LinearMethodBase] = None,
-        params_dtype: torch.dtype = torch.float16,
     ):
         head_dim = config.head_dim
         self.qkv_proj = LinearQKVMerged(
@@ -75,7 +71,6 @@ class RopeAttn(BaseOP):
             num_kv_heads=config.num_kv_heads,
             has_bias=has_attn_bias,
             linear_method=linear_method,
-            params_dtype=params_dtype,
         )
         self.has_qk_norm = has_qk_norm
         if has_qk_norm:
@@ -98,7 +93,6 @@ class RopeAttn(BaseOP):
             config.hidden_size,
             has_bias=False,
             linear_method=linear_method,
-            params_dtype=params_dtype,
         )
 
     @nvtx_annotate("MHA")
