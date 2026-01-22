@@ -23,12 +23,20 @@ def load_quantization_config(model_path: str) -> Optional[Any]:
     Looks for AWQ config files: quant_config.json or quantize_config.json
     Returns the appropriate QuantizationConfig instance or None.
     """
+    # Resolve HuggingFace model ID to local cache path if needed
+    local_path = model_path
     if not os.path.isdir(model_path):
-        return None
+        try:
+            from huggingface_hub import snapshot_download
+            # This will return the cached path if already downloaded, or download if not
+            local_path = snapshot_download(repo_id=model_path, local_files_only=True)
+        except Exception:
+            # If it fails (not cached or not a valid repo), return None
+            return None
         
     # Try different AWQ config file names
     for config_name in ["quant_config.json", "quantize_config.json"]:
-        config_path = os.path.join(model_path, config_name)
+        config_path = os.path.join(local_path, config_name)
         if os.path.exists(config_path):
             with open(config_path, "r") as f:
                 config_dict = json.load(f)
