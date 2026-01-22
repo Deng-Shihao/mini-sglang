@@ -32,9 +32,15 @@ class _LinearTPImpl(BaseOP):
         self._weights: Dict[str, torch.Tensor] = self._linear_method.create_weights(
             local_isize, local_osize, params_dtype
         )
+
         # Expose weights as attributes for state_dict compatibility
+        # _weights.items()
+        #    k       v
+        # [weight: weight]
+        # self.weight = tensor
         for name, tensor in self._weights.items():
             setattr(self, name, tensor)
+
         self.bias = torch.empty(local_osize, dtype=params_dtype) if has_bias else None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

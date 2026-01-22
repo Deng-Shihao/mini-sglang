@@ -67,6 +67,7 @@ def _shard_state_dict(
         ".gate_proj",
         ".up_proj",
     ]
+
     # Row-parallel layers: split input dim (dim 1 for weight, dim 0 for AWQ qweight)
     SPLIT_DIM_1_LIST = [
         ".o_proj",
@@ -74,11 +75,11 @@ def _shard_state_dict(
     ]
 
     for key, value in state_dict.items():
-        is_awq = _is_awq_weight(key)
-        suffix = _get_weight_suffix(key) if is_awq else None
+        is_awq = _is_awq_weight(key) # TODO AWQ
+        suffix = _get_weight_suffix(key) if is_awq else None # None
         
         # Determine base key for matching
-        base_key = key
+        base_key = key # model.layers.0.self_attn.k_proj.weight
         if suffix:
             base_key = key[:-len(suffix)]
 
@@ -121,116 +122,67 @@ def _shard_state_dict(
     return shard_state_dict
 
 
-def _merge_awq_weights(
-    state_dict: Dict[str, torch.Tensor],
-    keys: list,
-    new_base_key: str,
-    dim: int,
-) -> None:
-    """Merge AWQ weight components (qweight, qzeros, scales) for multiple projections."""
-    for suffix in [".qweight", ".qzeros", ".scales"]:
-        weight_keys = [k + suffix for k in keys if k + suffix in state_dict]
-        if weight_keys:
-            tensors = [state_dict[k] for k in weight_keys]
-            merged = torch.cat(tensors, dim=dim)
-            state_dict[new_base_key + suffix] = merged
-            for k in weight_keys:
-                del state_dict[k]
-
-
 def _merge_state_dict(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-    """Merge separate projection weights into combined weights.
-    
+    """
+    Merge separate projection weights into combined weights.
+
     Handles both standard weights and AWQ quantized weights.
+
+    unquantized:
+        model.layers.0.self_attn.q_proj.weight
+        model.layers.0.self_attn.k_proj.weight
+        model.layers.0.self_attn.v_proj.weight
+
+    awq:
+        model.layers.0.self_attn.q_proj.qweight
+        model.layers.0.self_attn.q_proj.qzeros
+        model.layers.0.self_attn.q_proj.scales
+
     """
     filtered_state_dict: Dict[str, torch.Tensor] = {}
-    processed_keys = set()
     
     for key in list(state_dict.keys()):
-        if key in processed_keys:
-            continue
-            
-        # Check for AWQ weight suffixes
-        is_awq = _is_awq_weight(key)
-        suffix = _get_weight_suffix(key) if is_awq else None
-        base_key = key[:-len(suffix)] if suffix else key
+        # model.layers.0.self_attn.q_proj.weight -> unquantize
+
+        # model.layers.0.self_attn.q_proj.qweight -> awq
+        # model.layers.0.self_attn.q_proj.qzeros
+        # model.layers.0.self_attn.q_proj.scales
+        if key.count(".q_proj"):
+            q_proj = state_dict[key] # q_proj.qweight
+            k_proj = state_dict[key.replace(".q_proj", ".k_proj")] # k_proj. 
+            v_proj = state_dict[key.replace(".q_proj", ".v_proj")]
+            new_key = key.replace(".q_proj", ".qkv_proj") # new_key = ".qkv_proj"
+
+            # save q, k, v -> qkv_proj : cat qkv
+            # q_proj.qweight, k_proj.qweight, v_proj.qweight -> qkv.qweight
+            # q_proj.qzero, k_proj.qzero, v_proj.qzero -> qkv.qzero
+            # q_proj.scales, k_proj.scales, v_proj.scales -> qkv.scales
+            filtered_state_dict[new_key] = torch.cat([q_proj, k_proj, v_proj], dim=0)
+
+            del state_dict[key]
+            del state_dict[key.replace(".q_proj", ".k_proj")]
+            del state_dict[key.replace(".q_proj", ".v_proj")]
         
-        # Handle Q/K/V projection merging
-        if base_key.endswith(".q_proj"):
-            prefix = base_key[:-len(".q_proj")]
-            
-            if is_awq:
-                # Merge AWQ weights for Q, K, V
-                q_base = prefix + ".q_proj"
-                k_base = prefix + ".k_proj"
-                v_base = prefix + ".v_proj"
-                new_base = prefix + ".qkv_proj"
-                
-                for awq_suffix in [".qweight", ".qzeros", ".scales"]:
-                    q_key = q_base + awq_suffix
-                    k_key = k_base + awq_suffix
-                    v_key = v_base + awq_suffix
-                    
-                    if q_key in state_dict and k_key in state_dict and v_key in state_dict:
-                        # AWQ weights: concat along output dim (dim 1 for qweight/qzeros/scales)
-                        merged = torch.cat([
-                            state_dict[q_key],
-                            state_dict[k_key],
-                            state_dict[v_key]
-                        ], dim=1)
-                        filtered_state_dict[new_base + awq_suffix] = merged
-                        processed_keys.update([q_key, k_key, v_key])
-            else:
-                # Standard weight merging
-                q_proj = state_dict[key]
-                k_key = key.replace(".q_proj", ".k_proj")
-                v_key = key.replace(".q_proj", ".v_proj")
-                k_proj = state_dict[k_key]
-                v_proj = state_dict[v_key]
-                new_key = key.replace(".q_proj", ".qkv_proj")
-                filtered_state_dict[new_key] = torch.cat([q_proj, k_proj, v_proj], dim=0)
-                processed_keys.update([key, k_key, v_key])
-                
-        # Handle gate/up projection merging
-        elif base_key.endswith(".gate_proj"):
-            prefix = base_key[:-len(".gate_proj")]
-            
-            if is_awq:
-                gate_base = prefix + ".gate_proj"
-                up_base = prefix + ".up_proj"
-                new_base = prefix + ".gate_up_proj"
-                
-                for awq_suffix in [".qweight", ".qzeros", ".scales"]:
-                    gate_key = gate_base + awq_suffix
-                    up_key = up_base + awq_suffix
-                    
-                    if gate_key in state_dict and up_key in state_dict:
-                        # AWQ weights: concat along output dim (dim 1)
-                        merged = torch.cat([
-                            state_dict[gate_key],
-                            state_dict[up_key]
-                        ], dim=1)
-                        filtered_state_dict[new_base + awq_suffix] = merged
-                        processed_keys.update([gate_key, up_key])
-            else:
-                gate_proj = state_dict[key]
-                up_key = key.replace(".gate_proj", ".up_proj")
-                up_proj = state_dict[up_key]
-                new_key = key.replace(".gate_proj", ".gate_up_proj")
-                filtered_state_dict[new_key] = torch.cat([gate_proj, up_proj], dim=0)
-                processed_keys.update([key, up_key])
-                
-        # Skip already merged keys
-        elif any(base_key.endswith(s) for s in [".k_proj", ".v_proj", ".up_proj"]):
-            if key not in processed_keys:
-                processed_keys.add(key)
+        elif key.count(".gate_proj"):
+            # gate_proj + up_proj -> gate_up_proj
+            gate_proj = state_dict[key]
+            up_proj = state_dict[key.replace(".gate_proj", ".up_proj")]
+
+            # .gate_proj -> .gate_up_proj
+            new_proj = key.replace(".gate_proj", ".gate_up_proj")
+
+            # filtered_state_dict[.gate_up_proj]
+            filtered_state_dict[new_key] = torch.cat([gate_proj, up_proj], dim=0)
+
+            del state_dict[key]
+            del state_dict[key.replace(".gate_proj", ".up_proj")]
+        
+        elif key.count(".k_proj") or key.count(".v_proj") or key.count("up_proj"):
             continue
-            
+
         else:
-            if key not in processed_keys:
-                filtered_state_dict[key] = state_dict[key]
-                processed_keys.add(key)
-                
+            filtered_state_dict[key] = state_dict[key]
+        
     return filtered_state_dict
 
 
@@ -271,6 +223,7 @@ def load_hf_weight(
     if get_tp_info().size > 1:
         state_dict = _shard_state_dict(state_dict, pack_factor=pack_factor)
 
+    # this is state_dict in safetensor
     state_dict = {k: v.to(device) for k, v in state_dict.items()}
     return _merge_state_dict(state_dict)
 
