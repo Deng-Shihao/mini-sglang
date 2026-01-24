@@ -44,7 +44,10 @@ def _shard_tensor(tensor: torch.Tensor, dim: int, rank: int, world_size: int, pa
     return tensor.chunk(world_size, dim=dim)[rank]
 
 
-def _shard_state_dict(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+def _shard_state_dict(
+    state_dict: Dict[str, torch.Tensor], 
+    pack_factor: int = 1
+) -> Dict[str, torch.Tensor]:
 
     shard_state_dict: Dict[str, torch.Tensor] = {}
     tp_info = get_tp_info()
