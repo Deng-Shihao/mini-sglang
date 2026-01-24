@@ -14,8 +14,16 @@ def main():
     max_ouput_len = 1024
 
     # align the hyperparameters
+    # llm = LLM(
+    #     "Qwen/Qwen3-0.6B", max_seq_len_override=4096, max_extend_tokens=16384, cuda_graph_max_bs=256
+    # )
+
+    # llm = LLM(
+    #     "Qwen/Qwen3-4B", max_seq_len_override=4096, max_extend_tokens=16384, cuda_graph_max_bs=256
+    # )
+
     llm = LLM(
-        "Qwen/Qwen3-0.6B", max_seq_len_override=4096, max_extend_tokens=16384, cuda_graph_max_bs=256
+        "Qwen/Qwen3-4B-AWQ", max_seq_len_override=4096, max_extend_tokens=16384, cuda_graph_max_bs=256
     )
 
     prompt_token_ids = [
