@@ -1,6 +1,7 @@
 # Adapted from: https://github.com/GeeeekExplorer/nano-vllm/blob/main/bench.py
 
 import time
+import torch
 from random import randint, seed
 
 from minisgl.core import SamplingParams
@@ -23,7 +24,11 @@ def main():
     # )
 
     llm = LLM(
-        "Qwen/Qwen3-4B-AWQ", max_seq_len_override=4096, max_extend_tokens=16384, cuda_graph_max_bs=256
+        "Qwen/Qwen3-4B-AWQ",
+        dtype=torch.float16,
+        max_seq_len_override=4096,
+        max_extend_tokens=16384,
+        cuda_graph_max_bs=256,
     )
 
     prompt_token_ids = [
