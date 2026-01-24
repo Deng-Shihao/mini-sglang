@@ -17,13 +17,37 @@ class RotaryConfig:
     scaling: Dict[str, float] | None
 
 
-def load_quantization_config(model_path: str) -> Optional[Any]:
-    """Load quantization config from model directory if present.
+def load_quantization_config(
+    model_path: str,
+    hf_config: Optional[Any] = None,
+) -> Optional[Any]:
+    """Load quantization config from HuggingFace config or model directory.
     
-    Looks for AWQ config files: quant_config.json or quantize_config.json
+    Priority:
+    1. Check hf_config.quantization_config (from config.json)
+    2. Fallback to AWQ config files: quant_config.json or quantize_config.json
+    
     Returns the appropriate QuantizationConfig instance or None.
     """
-    # Resolve HuggingFace model ID to local cache path if needed
+    # First, try to get quantization config from HuggingFace config
+    if hf_config is not None:
+        quant_cfg = getattr(hf_config, "quantization_config", None)
+        if quant_cfg is not None:
+            # quant_cfg might be a dict or an object with to_dict() method
+            if hasattr(quant_cfg, "to_dict"):
+                config_dict = quant_cfg.to_dict()
+            elif isinstance(quant_cfg, dict):
+                config_dict = quant_cfg
+            else:
+                config_dict = None
+            
+            if config_dict:
+                quant_method = config_dict.get("quant_method", "").lower()
+                if quant_method == "awq":
+                    from minisgl.layers.quantization import AWQConfig
+                    return AWQConfig.from_config(config_dict)
+    
+    # Fallback: Resolve HuggingFace model ID to local cache path if needed
     local_path = model_path
     if not os.path.isdir(model_path):
         try:
@@ -78,7 +102,7 @@ class ModelConfig:
         # Try to load quantization config if model_path is provided
         quant_config = None
         if model_path:
-            quant_config = load_quantization_config(model_path)
+            quant_config = load_quantization_config(model_path, hf_config=config)
         
         return cls(
             num_layers=config.num_hidden_layers,
