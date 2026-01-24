@@ -44,22 +44,13 @@ def _shard_tensor(tensor: torch.Tensor, dim: int, rank: int, world_size: int, pa
     return tensor.chunk(world_size, dim=dim)[rank]
 
 
-def _shard_state_dict(
-    state_dict: Dict[str, torch.Tensor],
-    pack_factor: int = 1,
-) -> Dict[str, torch.Tensor]:
-    """Shard state dict for tensor parallelism.
-    
-    Args:
-        state_dict: The state dict to shard
-        pack_factor: AWQ pack factor (8 for 4-bit quantization), used for packed dims
-    """
+def _shard_state_dict(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+
     shard_state_dict: Dict[str, torch.Tensor] = {}
     tp_info = get_tp_info()
     r = tp_info.rank
     n = tp_info.size
 
-    # Column-parallel layers: split output dim (dim 0 for weight, dim 1 for AWQ qweight)
     SPLIT_DIM_0_LIST = [
         ".q_proj",
         ".k_proj",
@@ -68,54 +59,25 @@ def _shard_state_dict(
         ".up_proj",
     ]
 
-    # Row-parallel layers: split input dim (dim 1 for weight, dim 0 for AWQ qweight)
     SPLIT_DIM_1_LIST = [
         ".o_proj",
         ".down_proj",
     ]
 
     for key, value in state_dict.items():
-        is_awq = _is_awq_weight(key) # TODO AWQ
-        suffix = _get_weight_suffix(key) if is_awq else None # None
-        
-        # Determine base key for matching
-        base_key = key # model.layers.0.self_attn.k_proj.weight
-        if suffix:
-            base_key = key[:-len(suffix)]
+        if any(key.count(sub) for sub in SPLIT_DIM_0_LIST):
+            shard_state_dict[key] = value.chunk(n, dim=0)[r]
 
-        if any(base_key.count(sub) for sub in SPLIT_DIM_0_LIST):
-            if is_awq:
-                # AWQ: qweight is [K, N/pack], scales is [K/group, N], qzeros is [K/group, N/pack]
-                # For column parallel (split output), split dim 1
-                if suffix in [".qweight", ".qzeros"]:
-                    # Packed dimension - shard normally, pack factor is already accounted for in shape
-                    shard_state_dict[key] = value.chunk(n, dim=1)[r]
-                else:  # .scales
-                    shard_state_dict[key] = value.chunk(n, dim=1)[r]
-            else:
-                # Standard weight: [output, input], split dim 0
-                shard_state_dict[key] = value.chunk(n, dim=0)[r]
+        elif any(key.count(sub) for sub in SPLIT_DIM_1_LIST):
+            shard_state_dict[key] = value.chunk(n, dim=1)[r]
 
-        elif any(base_key.count(sub) for sub in SPLIT_DIM_1_LIST):
-            if is_awq:
-                # AWQ: For row parallel (split input), split dim 0
-                # qweight is [K, N/pack], scales is [K/group, N], qzeros is [K/group, N/pack]
-                if suffix in [".qweight"]:
-                    shard_state_dict[key] = value.chunk(n, dim=0)[r]
-                elif suffix in [".qzeros", ".scales"]:
-                    # These depend on K/group_size, need to shard along dim 0
-                    shard_state_dict[key] = value.chunk(n, dim=0)[r]
-            else:
-                # Standard weight: [output, input], split dim 1
-                shard_state_dict[key] = value.chunk(n, dim=1)[r]
-
-        elif base_key.count("lm_head") or base_key.count("embed_tokens"):
-            # Embeddings are not quantized
+        elif key.count("lm_head") or key.count("embed_tokens"):
             num_embeddings = value.shape[0]
             num_embeddings_per_partition = divide_up(num_embeddings, n)
             vocab_start_idx = r * num_embeddings_per_partition
             vocab_end_idx = min((r + 1) * num_embeddings_per_partition, num_embeddings)
             shard_state_dict[key] = value[vocab_start_idx:vocab_end_idx, :]
+
         else:
             shard_state_dict[key] = value
 
