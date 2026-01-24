@@ -143,9 +143,10 @@ class Engine:
             if config.model_config.quantization_config is not None:
                 pack_factor = getattr(config.model_config.quantization_config, 'pack_factor', 1)
             
+            state_dict = load_hf_weight(config.model_path, self.device, pack_factor=pack_factor)
             return {
-                k: v.to(self.dtype)
-                for k, v in load_hf_weight(config.model_path, self.device, pack_factor=pack_factor).items()
+                k: v if k.endswith(".qweight") or k.endswith(".qzeros") else v.to(self.dtype)
+                for k, v in state_dict.items()
             }
 
     def _determine_num_pages(self, old_free_memory: int, config: EngineConfig) -> int:

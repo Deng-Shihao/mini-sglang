@@ -157,7 +157,8 @@ def _merge_state_dict(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Te
             # q_proj.qweight, k_proj.qweight, v_proj.qweight -> qkv.qweight
             # q_proj.qzero, k_proj.qzero, v_proj.qzero -> qkv.qzero
             # q_proj.scales, k_proj.scales, v_proj.scales -> qkv.scales
-            filtered_state_dict[new_key] = torch.cat([q_proj, k_proj, v_proj], dim=0)
+            cat_dim = 1 if _is_awq_weight(key) else 0
+            filtered_state_dict[new_key] = torch.cat([q_proj, k_proj, v_proj], dim=cat_dim)
 
             del state_dict[key]
             del state_dict[key.replace(".q_proj", ".k_proj")]
@@ -172,7 +173,8 @@ def _merge_state_dict(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Te
             new_key = key.replace(".gate_proj", ".gate_up_proj")
 
             # filtered_state_dict[.gate_up_proj]
-            filtered_state_dict[new_key] = torch.cat([gate_proj, up_proj], dim=0)
+            cat_dim = 1 if _is_awq_weight(key) else 0
+            filtered_state_dict[new_key] = torch.cat([gate_proj, up_proj], dim=cat_dim)
 
             del state_dict[key]
             del state_dict[key.replace(".gate_proj", ".up_proj")]
