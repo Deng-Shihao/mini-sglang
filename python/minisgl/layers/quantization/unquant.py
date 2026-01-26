@@ -18,9 +18,7 @@ class UnquantizedLinearMethod(LinearMethodBase):
     def __init__(self, separate_bias_add: bool = False):
         self.separate_bias_add = separate_bias_add
 
-    def create_weights(
-        self, input_size: int, output_size: int
-    ) -> Dict[str, torch.Tensor]:
+    def create_weights(self, input_size: int, output_size: int) -> Dict[str, torch.Tensor]:
         weight = Parameter(
             torch.empty(
                 output_size,
@@ -37,7 +35,9 @@ class UnquantizedLinearMethod(LinearMethodBase):
         x: torch.Tensor,
         bias: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
+
         weight = weights["weight"]
+
         if self.separate_bias_add:
             if bias:
                 return F.linear(x, weight) + bias

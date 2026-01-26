@@ -30,9 +30,11 @@ def _get_weight_suffix(key: str) -> Optional[str]:
     return None
 
 
-def _shard_tensor(tensor: torch.Tensor, dim: int, rank: int, world_size: int, pack_factor: int = 1) -> torch.Tensor:
+def _shard_tensor(
+    tensor: torch.Tensor, dim: int, rank: int, world_size: int, pack_factor: int = 1
+) -> torch.Tensor:
     """Shard a tensor along a dimension, accounting for pack factor on that dimension.
-    
+
     For AWQ qweight and qzeros, the output dimension is packed by pack_factor=8.
     When sharding along the packed dimension, we need to divide by (world_size * pack_factor)
     and keep the tensor together.
@@ -45,10 +47,8 @@ def _shard_tensor(tensor: torch.Tensor, dim: int, rank: int, world_size: int, pa
 
 
 def _shard_state_dict(
-    state_dict: Dict[str, torch.Tensor], 
-    pack_factor: int = 1
+    state_dict: Dict[str, torch.Tensor], pack_factor: int = 1
 ) -> Dict[str, torch.Tensor]:
-
     shard_state_dict: Dict[str, torch.Tensor] = {}
     tp_info = get_tp_info()
     r = tp_info.rank
@@ -105,7 +105,7 @@ def _merge_state_dict(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Te
 
     """
     filtered_state_dict: Dict[str, torch.Tensor] = {}
-    
+
     for key in list(state_dict.keys()):
         # model.layers.0.self_attn.q_proj.weight -> unquantize
 
@@ -113,10 +113,10 @@ def _merge_state_dict(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Te
         # model.layers.0.self_attn.q_proj.qzeros
         # model.layers.0.self_attn.q_proj.scales
         if key.count(".q_proj"):
-            q_proj = state_dict[key] # q_proj.qweight
-            k_proj = state_dict[key.replace(".q_proj", ".k_proj")] # k_proj. 
+            q_proj = state_dict[key]  # q_proj.qweight
+            k_proj = state_dict[key.replace(".q_proj", ".k_proj")]  # k_proj.
             v_proj = state_dict[key.replace(".q_proj", ".v_proj")]
-            new_key = key.replace(".q_proj", ".qkv_proj") # new_key = ".qkv_proj"
+            new_key = key.replace(".q_proj", ".qkv_proj")  # new_key = ".qkv_proj"
 
             # save q, k, v -> qkv_proj : cat qkv
             # q_proj.qweight, k_proj.qweight, v_proj.qweight -> qkv.qweight
@@ -128,7 +128,7 @@ def _merge_state_dict(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Te
             del state_dict[key]
             del state_dict[key.replace(".q_proj", ".k_proj")]
             del state_dict[key.replace(".q_proj", ".v_proj")]
-        
+
         elif key.count(".gate_proj"):
             # gate_proj + up_proj -> gate_up_proj
             gate_proj = state_dict[key]
@@ -143,13 +143,13 @@ def _merge_state_dict(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Te
 
             del state_dict[key]
             del state_dict[key.replace(".gate_proj", ".up_proj")]
-        
+
         elif key.count(".k_proj") or key.count(".v_proj") or key.count("up_proj"):
             continue
 
         else:
             filtered_state_dict[key] = state_dict[key]
-        
+
     return filtered_state_dict
 
 
@@ -159,7 +159,7 @@ def load_hf_weight(
     pack_factor: int = 1,
 ) -> Dict[str, torch.Tensor]:
     """Load HuggingFace weights with optional AWQ support.
-    
+
     Args:
         model_path: Path to model directory or HuggingFace model ID
         device: Target device for weights
@@ -193,4 +193,3 @@ def load_hf_weight(
     # this is state_dict in safetensor
     state_dict = {k: v.to(device) for k, v in state_dict.items()}
     return _merge_state_dict(state_dict)
-

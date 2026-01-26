@@ -24,7 +24,7 @@ class BaseOP:
                 continue
             if isinstance(param, torch.Tensor):
                 result[_concat_prefix(prefix, name)] = param
-            elif isinstance(param, BaseOP):
+            elif isinstance(param, BaseOP): # model.layers
                 param.state_dict(prefix=_concat_prefix(prefix, name), result=result)
 
         return result
@@ -36,18 +36,22 @@ class BaseOP:
         prefix: str = "",
         _internal: bool = False,
     ) -> None:
+
         for name, param in self.__dict__.items():
             if name.startswith("_"):
                 continue
+
             if isinstance(param, torch.Tensor):
                 item = state_dict.pop(_concat_prefix(prefix, name))
                 assert isinstance(item, torch.Tensor)
                 assert param.shape == item.shape and param.dtype == item.dtype
                 setattr(self, name, item)
+
             elif isinstance(param, BaseOP):
                 param.load_state_dict(
                     state_dict, prefix=_concat_prefix(prefix, name), _internal=True
                 )
+
         if not _internal and state_dict:
             raise RuntimeError(f"Unexpected keys in state_dict: {list(state_dict.keys())}")
 
@@ -90,7 +94,7 @@ class OPList(BaseOP, Generic[T]):
         self,
         state_dict: _STATE_DICT,
         *,
-        prefix: str = "",
+        prefix: str = "", # model.layer
         _internal: bool = False,
     ) -> None:
         for i, op in enumerate(self.op_list):

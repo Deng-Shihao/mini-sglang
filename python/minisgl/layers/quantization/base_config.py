@@ -18,9 +18,7 @@ def set_weight_attrs(
     if weight_attrs is None:
         return
     for key, value in weight_attrs.items():
-        assert not hasattr(weight, key), (
-            f"Overwriting existing attribute {key} on weight tensor."
-        )
+        assert not hasattr(weight, key), f"Overwriting existing attribute {key} on weight tensor."
         setattr(weight, key, value)
 
 
@@ -28,9 +26,7 @@ class LinearMethodBase(ABC):
     """Base class for different (maybe quantized) linear methods."""
 
     @abstractmethod
-    def create_weights(
-        self, input_size: int, output_size: int
-    ) -> Dict[str, torch.Tensor]:
+    def create_weights(self, input_size: int, output_size: int) -> Dict[str, torch.Tensor]:
         """Create weights for a linear layer."""
         raise NotImplementedError
 
@@ -86,9 +82,7 @@ class QuantizationConfig(ABC):
         for key in keys:
             if key in config:
                 return config[key]
-        raise ValueError(
-            f"Cannot find any of {keys} in the model's " "quantization config."
-        )
+        raise ValueError(f"Cannot find any of {keys} in the model's quantization config.")
 
     @abstractmethod
     def get_linear_method(self) -> LinearMethodBase:

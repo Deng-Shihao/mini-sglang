@@ -22,11 +22,11 @@ def load_quantization_config(
     hf_config: Optional[Any] = None,
 ) -> Optional[Any]:
     """Load quantization config from HuggingFace config or model directory.
-    
+
     Priority:
     1. Check hf_config.quantization_config (from config.json)
     2. Fallback to AWQ config files: quant_config.json or quantize_config.json
-    
+
     Returns the appropriate QuantizationConfig instance or None.
     """
     # First, try to get quantization config from HuggingFace config
@@ -40,37 +40,40 @@ def load_quantization_config(
                 config_dict = quant_cfg
             else:
                 config_dict = None
-            
+
             if config_dict:
                 quant_method = config_dict.get("quant_method", "").lower()
                 if quant_method == "awq":
                     from minisgl.layers.quantization import AWQConfig
+
                     return AWQConfig.from_config(config_dict)
-    
+
     # Fallback: Resolve HuggingFace model ID to local cache path if needed
     local_path = model_path
     if not os.path.isdir(model_path):
         try:
             from huggingface_hub import snapshot_download
+
             # This will return the cached path if already downloaded, or download if not
             local_path = snapshot_download(repo_id=model_path, local_files_only=True)
         except Exception:
             # If it fails (not cached or not a valid repo), return None
             return None
-        
+
     # Try different AWQ config file names
     for config_name in ["quant_config.json", "quantize_config.json"]:
         config_path = os.path.join(local_path, config_name)
         if os.path.exists(config_path):
             with open(config_path, "r") as f:
                 config_dict = json.load(f)
-            
+
             # Detect quantization method
             quant_method = config_dict.get("quant_method", "").lower()
             if quant_method == "awq" or "w_bit" in config_dict or "bits" in config_dict:
                 from minisgl.layers.quantization import AWQConfig
+
                 return AWQConfig.from_config(config_dict)
-    
+
     return None
 
 
@@ -98,12 +101,12 @@ class ModelConfig:
         num_kv_heads = getattr(config, "num_key_value_heads", config.num_attention_heads)
         head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
         tie_word_embeddings = getattr(config, "tie_word_embeddings", False)
-        
+
         # Try to load quantization config if model_path is provided
         quant_config = None
         if model_path:
             quant_config = load_quantization_config(model_path, hf_config=config)
-        
+
         return cls(
             num_layers=config.num_hidden_layers,
             num_qo_heads=config.num_attention_heads,
@@ -124,16 +127,15 @@ class ModelConfig:
             ),
             quantization_config=quant_config,
         )
-    
+
     @property
     def is_quantized(self) -> bool:
         """Check if the model is quantized."""
         return self.quantization_config is not None
-    
+
     @property
     def quant_method_name(self) -> Optional[str]:
         """Get the quantization method name if quantized."""
         if self.quantization_config:
             return self.quantization_config.get_name()
         return None
-

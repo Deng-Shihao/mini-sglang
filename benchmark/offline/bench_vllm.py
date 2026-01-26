@@ -5,25 +5,14 @@ vLLM Throughput Benchmark with Warmup
 Includes warmup phase to stabilize GPU performance before measurement
 """
 
-"""
-# Qwen/Qwen3-4B-AWQ (Marlin Kernel)
-- tp = 1
-Total time: 109.76 seconds
-Total generated tokens: 262144
-Throughput: 2338.43tok/s
-- tp = 2
-Total time: 95.84 seconds
-Total generated tokens: 262144
-Throughput: 2735.30tok/s
 
-# Qwen/Qwen3-4B
-"""
+
 model_path = "Qwen/Qwen3-4B-AWQ"
 # model_path = "Qwen/Qwen3-4B"
 
 # Test configuration
 num_seqs = 256
-max_input_len = 1024 
+max_input_len = 1024
 max_output_len = 1024
 
 # Warmup configuration
@@ -86,3 +75,65 @@ print(f"Total generated tokens: {total_generated_tokens}")
 print(f"Throughput: {tokens_per_sec:.2f} tokens/s")
 print(f"Average tokens per sequence: {total_generated_tokens / num_seqs:.2f}")
 print("=" * 50)
+
+"""
+# A30 GPU
+# Qwen/Qwen3-4B-AWQ (Marlin Kernel)
+===================================
+- tp = 1
+num_seqs = 256
+Total time: 109.76 seconds
+Total generated tokens: 262144
+Throughput: 2338.43tok/s
+
+- tp = 2
+num_seqs = 256
+Total time: 95.84 seconds
+Total generated tokens: 262144
+Throughput: 2735.30tok/s
+
+- tp = 1
+num_seqs = 1
+Total time: 6.67 seconds
+Total generated tokens: 153.63toks
+Throughput: 153.63tok/s
+
+- tp = 2
+num_seqs = 1
+Total time: 5.84 seconds
+Total generated tokens: 1024
+Throughput: 192.36tok/s
+
+# Qwen/Qwen3-4B
+====================================
+- tp = 1
+num_seqs = 1
+Total time: 13.24 seconds
+Total generated tokens: 1024
+Throughput: 77.35tok/s
+
+-tp = 2
+num_seqs = 1
+Total time:
+Total generated tokens: 1024
+Throughput: 125toks/s
+
+- tp = 1
+num_seqs = 256
+Total time: 13.24 seconds
+Total generated tokens: 1024
+Throughput: 77.35tok/s
+
+-tp = 1
+num_seqs = 256
+Total time: 119.42 seconds
+Total generated tokens: 262144
+Throughput: 2195.11tok/s
+
+-tp = 2
+num_seqs = 256
+Total time: 97.19 seconds
+Total generated tokens: 262144
+Throughput: 2697.29tok/s
+
+"""

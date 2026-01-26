@@ -79,6 +79,7 @@ class RopeAttn(BaseOP):
         else:
             self.q_norm = None
             self.k_norm = None
+            
         self.attn = AttentionLayer(
             layer_id=layer_id,
             head_dim=head_dim,

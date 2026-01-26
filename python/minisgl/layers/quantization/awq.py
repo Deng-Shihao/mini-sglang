@@ -78,9 +78,7 @@ class AWQLinearMethod(LinearMethodBase):
     def __init__(self, quant_config: AWQConfig):
         self.quant_config = quant_config
 
-    def create_weights(
-        self, input_size: int, output_size: int
-    ) -> Dict[str, torch.Tensor]:
+    def create_weights(self, input_size: int, output_size: int) -> Dict[str, torch.Tensor]:
         if input_size % self.quant_config.group_size != 0:
             raise ValueError(
                 "The input size is not aligned with the quantized "
@@ -157,13 +155,17 @@ class AWQLinearMethod(LinearMethodBase):
         x: torch.Tensor,
         bias: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
+
         qweight = weights["qweight"]
         qzeros = weights["qzeros"]
         scales = weights["scales"]
+
         pack_factor = self.quant_config.pack_factor
         out_shape = x.shape[:-1] + (qweight.shape[-1] * pack_factor,)
         reshaped_x = x.reshape(-1, x.shape[-1])
+
         out = awq_gemm_triton(reshaped_x, qweight, scales, qzeros, pack_factor)
+
         if bias is not None:
             out = out + bias
         return out.reshape(out_shape)

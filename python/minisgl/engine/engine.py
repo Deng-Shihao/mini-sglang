@@ -141,8 +141,8 @@ class Engine:
             # Get pack_factor from quantization config if AWQ
             pack_factor = 1
             if config.model_config.quantization_config is not None:
-                pack_factor = getattr(config.model_config.quantization_config, 'pack_factor', 1)
-            
+                pack_factor = getattr(config.model_config.quantization_config, "pack_factor", 1)
+
             state_dict = load_hf_weight(config.model_path, self.device, pack_factor=pack_factor)
             return {
                 k: v if k.endswith(".qweight") or k.endswith(".qzeros") else v.to(self.dtype)
