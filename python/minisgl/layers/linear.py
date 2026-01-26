@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from minisgl.distributed import DistributedCommunicator, get_tp_info
 from minisgl.utils import divide_even
 
-from .base import BaseOP
+from .base import BaseOP, _STATE_DICT, _concat_prefix
 from .quantization import LinearMethodBase, UnquantizedLinearMethod
 
 
@@ -28,9 +28,14 @@ class _LinearTPImpl(BaseOP):
         self.local_input_size = local_isize
         self.local_output_size = local_osize
         self._linear_method = linear_method or UnquantizedLinearMethod()
-        self._weights: Dict[str, torch.Tensor] = self._linear_method.create_weights(
+        self._weights: Dict[str, Any] = self._linear_method.create_weights(
             local_isize, local_osize
         )
+        # Store metadata separately (non-tensor values starting with _)
+        self._weight_metadata: Dict[str, Any] = {}
+        for name in list(self._weights.keys()):
+            if name.startswith("_"):
+                self._weight_metadata[name] = self._weights.pop(name)
 
         # Expose weights as attributes for state_dict compatibility
         # _weights.items()
@@ -41,11 +46,72 @@ class _LinearTPImpl(BaseOP):
             setattr(self, name, tensor)
 
         self.bias = torch.empty(local_osize) if has_bias else None
+        self._weights_processed = False
+
+    def load_state_dict(
+        self,
+        state_dict: _STATE_DICT,
+        *,
+        prefix: str = "",
+        _internal: bool = False,
+    ) -> None:
+        """Load state dict and process weights for quantization methods that need it."""
+        # First load weights using parent's method
+        for name, param in self.__dict__.items():
+            if name.startswith("_"):
+                continue
+
+            if isinstance(param, torch.Tensor):
+                item = state_dict.pop(_concat_prefix(prefix, name))
+                assert isinstance(item, torch.Tensor)
+                assert param.shape == item.shape and param.dtype == item.dtype
+                setattr(self, name, item)
+
+            elif isinstance(param, BaseOP):
+                param.load_state_dict(
+                    state_dict, prefix=_concat_prefix(prefix, name), _internal=True
+                )
+
+        # Sync _weights dict from loaded attributes
+        for name in list(self._weights.keys()):
+            if hasattr(self, name):
+                self._weights[name] = getattr(self, name)
+
+        # Add metadata back to weights for processing
+        for name, value in self._weight_metadata.items():
+            self._weights[name] = value
+
+        # Process weights if the linear method requires it (e.g., Marlin repacking)
+        if not self._weights_processed:
+            processed_weights = self._linear_method.process_weights_after_loading(
+                self._weights
+            )
+
+            # Update weights dict and attributes with processed values
+            self._weight_metadata = {}
+            for name, value in processed_weights.items():
+                if name.startswith("_"):
+                    self._weight_metadata[name] = value
+                elif isinstance(value, torch.Tensor):
+                    self._weights[name] = value
+                    setattr(self, name, value)
+                else:
+                    # Non-tensor, non-metadata values (like workspace)
+                    self._weights[name] = value
+
+            self._weights_processed = True
+
+        if not _internal and state_dict:
+            raise RuntimeError(f"Unexpected keys in state_dict: {list(state_dict.keys())}")
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Sync weight dict with potentially reloaded attributes
         for name in list(self._weights.keys()):
-            self._weights[name] = getattr(self, name)
+            if hasattr(self, name):
+                self._weights[name] = getattr(self, name)
+        # Add metadata back for apply_weights
+        for name, value in self._weight_metadata.items():
+            self._weights[name] = value
         return self._linear_method.apply_weights(self._weights, x, self.bias)
 
 
@@ -127,7 +193,11 @@ class LinearOProj(_LinearTPImpl):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Sync weight dict with potentially reloaded attributes
         for name in list(self._weights.keys()):
-            self._weights[name] = getattr(self, name)
+            if hasattr(self, name):
+                self._weights[name] = getattr(self, name)
+        # Add metadata back for apply_weights
+        for name, value in self._weight_metadata.items():
+            self._weights[name] = value
         y = self._linear_method.apply_weights(self._weights, x, self.bias)
         if self._tp_size > 1:
             y = self._comm.all_reduce(y)
@@ -159,7 +229,11 @@ class LinearRowParallel(_LinearTPImpl):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Sync weight dict with potentially reloaded attributes
         for name in list(self._weights.keys()):
-            self._weights[name] = getattr(self, name)
+            if hasattr(self, name):
+                self._weights[name] = getattr(self, name)
+        # Add metadata back for apply_weights
+        for name, value in self._weight_metadata.items():
+            self._weights[name] = value
         y = self._linear_method.apply_weights(self._weights, x, self.bias)
         if self._tp_size > 1:
             y = self._comm.all_reduce(y)

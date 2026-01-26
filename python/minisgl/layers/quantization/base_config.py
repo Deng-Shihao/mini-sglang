@@ -40,6 +40,23 @@ class LinearMethodBase(ABC):
         """Apply the weights to the input tensor."""
         raise NotImplementedError
 
+    def process_weights_after_loading(
+        self,
+        weights: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Process weights after loading from checkpoint.
+
+        Override this method to transform weights (e.g., repack for different format).
+        Default implementation returns weights unchanged.
+
+        Args:
+            weights: Dictionary containing loaded weight tensors
+
+        Returns:
+            Dictionary containing processed weight tensors
+        """
+        return weights
+
 
 class QuantizationConfig(ABC):
     """Base class for quantization configs."""

@@ -20,6 +20,7 @@ class RotaryConfig:
 def load_quantization_config(
     model_path: str,
     hf_config: Optional[Any] = None,
+    force_awq_triton: bool = False,
 ) -> Optional[Any]:
     """Load quantization config from HuggingFace config or model directory.
 
@@ -27,8 +28,19 @@ def load_quantization_config(
     1. Check hf_config.quantization_config (from config.json)
     2. Fallback to AWQ config files: quant_config.json or quantize_config.json
 
-    Returns the appropriate QuantizationConfig instance or None.
+    For AWQ models, automatically upgrades to AWQ Marlin on SM80+ GPUs
+    unless force_awq_triton is True.
+
+    Args:
+        model_path: Path to model or HuggingFace model ID
+        hf_config: HuggingFace config object (optional)
+        force_awq_triton: If True, force using AWQ Triton instead of Marlin
+
+    Returns:
+        The appropriate QuantizationConfig instance or None.
     """
+    config_dict = None
+
     # First, try to get quantization config from HuggingFace config
     if hf_config is not None:
         quant_cfg = getattr(hf_config, "quantization_config", None)
@@ -38,43 +50,75 @@ def load_quantization_config(
                 config_dict = quant_cfg.to_dict()
             elif isinstance(quant_cfg, dict):
                 config_dict = quant_cfg
-            else:
-                config_dict = None
 
-            if config_dict:
-                quant_method = config_dict.get("quant_method", "").lower()
-                if quant_method == "awq":
-                    from minisgl.layers.quantization import AWQConfig
+    # Fallback: Try to load from config files
+    if config_dict is None:
+        # Resolve HuggingFace model ID to local cache path if needed
+        local_path = model_path
+        if not os.path.isdir(model_path):
+            try:
+                from huggingface_hub import snapshot_download
 
-                    return AWQConfig.from_config(config_dict)
+                # This will return the cached path if already downloaded, or download if not
+                local_path = snapshot_download(repo_id=model_path, local_files_only=True)
+            except Exception:
+                # If it fails (not cached or not a valid repo), return None
+                return None
 
-    # Fallback: Resolve HuggingFace model ID to local cache path if needed
-    local_path = model_path
-    if not os.path.isdir(model_path):
-        try:
-            from huggingface_hub import snapshot_download
+        # Try different AWQ config file names
+        for config_name in ["quant_config.json", "quantize_config.json"]:
+            config_path = os.path.join(local_path, config_name)
+            if os.path.exists(config_path):
+                with open(config_path, "r") as f:
+                    config_dict = json.load(f)
+                break
 
-            # This will return the cached path if already downloaded, or download if not
-            local_path = snapshot_download(repo_id=model_path, local_files_only=True)
-        except Exception:
-            # If it fails (not cached or not a valid repo), return None
-            return None
+    if config_dict is None:
+        return None
 
-    # Try different AWQ config file names
-    for config_name in ["quant_config.json", "quantize_config.json"]:
-        config_path = os.path.join(local_path, config_name)
-        if os.path.exists(config_path):
-            with open(config_path, "r") as f:
-                config_dict = json.load(f)
+    # Detect quantization method and create appropriate config
+    quant_method = config_dict.get("quant_method", "").lower()
+    is_awq = quant_method == "awq" or "w_bit" in config_dict or "bits" in config_dict
 
-            # Detect quantization method
-            quant_method = config_dict.get("quant_method", "").lower()
-            if quant_method == "awq" or "w_bit" in config_dict or "bits" in config_dict:
-                from minisgl.layers.quantization import AWQConfig
-
-                return AWQConfig.from_config(config_dict)
+    if is_awq:
+        return _create_awq_config(config_dict, force_awq_triton)
 
     return None
+
+
+def _create_awq_config(
+    config_dict: Dict[str, Any],
+    force_awq_triton: bool = False,
+) -> Any:
+    """Create AWQ config, auto-upgrading to Marlin when possible.
+
+    Args:
+        config_dict: The quantization config dictionary
+        force_awq_triton: If True, force using AWQ Triton
+
+    Returns:
+        AWQMarlinConfig if compatible and not forced, else AWQConfig
+    """
+    from minisgl.layers.quantization import AWQConfig
+    from minisgl.layers.quantization.awq_marlin import AWQMarlinConfig
+
+    # Try to use AWQ Marlin if compatible and not forced to use Triton
+    if not force_awq_triton:
+        if AWQMarlinConfig.is_awq_marlin_compatible(config_dict):
+            try:
+                marlin_config = AWQMarlinConfig.from_config(config_dict)
+                import logging
+
+                logging.getLogger(__name__).info(
+                    "Auto-upgraded AWQ to AWQ Marlin for faster inference on SM80+ GPU."
+                )
+                return marlin_config
+            except Exception:
+                # Fall back to AWQ Triton if Marlin fails
+                pass
+
+    # Fall back to AWQ Triton
+    return AWQConfig.from_config(config_dict)
 
 
 @dataclass(frozen=True)
