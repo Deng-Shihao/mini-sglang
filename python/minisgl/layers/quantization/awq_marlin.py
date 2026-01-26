@@ -62,12 +62,14 @@ class AWQMarlinConfig(QuantizationConfig):
 
         self.quant_type = self.TYPE_MAP[weight_bits]
 
-        # Verify Marlin compatibility
-        if not check_marlin_supported(self.quant_type, group_size, zero_point):
+        # Verify Marlin config compatibility (not device capability - checked later)
+        if not check_marlin_supported(
+            self.quant_type, group_size, zero_point, check_device=False
+        ):
             raise ValueError(
                 f"AWQ Marlin does not support this configuration: "
                 f"bits={weight_bits}, group_size={group_size}, zero_point={zero_point}. "
-                f"Ensure you have SM80+ GPU and group_size in [-1, 32, 64, 128]."
+                f"group_size must be in [-1, 32, 64, 128]."
             )
 
     def __repr__(self) -> str:
@@ -105,6 +107,9 @@ class AWQMarlinConfig(QuantizationConfig):
     def is_awq_marlin_compatible(cls, quant_config: Dict[str, Any]) -> bool:
         """Check if an AWQ config can be upgraded to Marlin.
 
+        Note: This only checks config parameters, not GPU capability.
+        GPU capability is checked during weight processing when CUDA is initialized.
+
         Args:
             quant_config: The quantization config dictionary
 
@@ -123,10 +128,13 @@ class AWQMarlinConfig(QuantizationConfig):
         if num_bits not in cls.TYPE_MAP:
             return False
 
+        # Only check config parameters, not device capability
+        # Device capability is checked during weight processing
         return check_marlin_supported(
             quant_type=cls.TYPE_MAP[num_bits],
             group_size=group_size,
             has_zp=zero_point,
+            check_device=False,  # Don't check GPU capability during config loading
         )
 
     def get_linear_method(self) -> "AWQMarlinLinearMethod":

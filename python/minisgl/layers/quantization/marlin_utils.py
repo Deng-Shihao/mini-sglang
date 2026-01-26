@@ -43,8 +43,12 @@ ScalarType, scalar_types = get_scalar_types()
 
 
 def get_device_capability() -> tuple:
-    """Get the CUDA device capability."""
-    if torch.cuda.is_available():
+    """Get the CUDA device capability.
+
+    Returns (0, 0) if CUDA is not available or not yet initialized,
+    to avoid initializing CUDA during config loading.
+    """
+    if torch.cuda.is_available() and torch.cuda.is_initialized():
         return torch.cuda.get_device_capability()
     return (0, 0)
 
@@ -54,6 +58,7 @@ def check_marlin_supported(
     group_size: int,
     has_zp: bool = False,
     device_capability: Optional[int] = None,
+    check_device: bool = True,
 ) -> bool:
     """Check if Marlin supports the given quantization configuration.
 
@@ -62,17 +67,19 @@ def check_marlin_supported(
         group_size: The quantization group size (-1 for channelwise)
         has_zp: Whether zero points are used (True for AWQ)
         device_capability: GPU compute capability (e.g., 80 for A100)
+        check_device: Whether to check device capability (set False during config loading)
 
     Returns:
         bool: True if Marlin supports this configuration
     """
-    if device_capability is None:
-        major, minor = get_device_capability()
-        device_capability = major * 10 + minor
+    if check_device:
+        if device_capability is None:
+            major, minor = get_device_capability()
+            device_capability = major * 10 + minor
 
-    # Marlin requires SM80+ (Ampere or newer)
-    if device_capability < 80:
-        return False
+        # Marlin requires SM80+ (Ampere or newer)
+        if device_capability < 80:
+            return False
 
     # Check group size
     if group_size not in MARLIN_SUPPORTED_GROUP_SIZES:
