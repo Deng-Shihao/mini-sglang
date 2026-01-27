@@ -30,30 +30,28 @@ def _get_weight_suffix(key: str) -> Optional[str]:
     return None
 
 
-def _shard_tensor(
-    tensor: torch.Tensor, dim: int, rank: int, world_size: int, pack_factor: int = 1
-) -> torch.Tensor:
-    """Shard a tensor along a dimension, accounting for pack factor on that dimension.
-
-    For AWQ qweight and qzeros, the output dimension is packed by pack_factor=8.
-    When sharding along the packed dimension, we need to divide by (world_size * pack_factor)
-    and keep the tensor together.
-    """
-    if pack_factor > 1:
-        # For packed dimensions, we shard the logical size
-        # The tensor shape already reflects packing, so we shard normally
-        pass
-    return tensor.chunk(world_size, dim=dim)[rank]
-
-
 def _shard_state_dict(
     state_dict: Dict[str, torch.Tensor], pack_factor: int = 1
 ) -> Dict[str, torch.Tensor]:
+    """Shard state dict for tensor parallelism.
+
+    Supports both standard weights and AWQ quantized weights.
+
+    For AWQ weights, the layout is transposed and packed:
+    - qweight: [in_features // pack_factor, out_features]
+    - scales: [in_features // group_size, out_features]
+    - qzeros: [in_features // group_size, out_features // pack_factor]
+
+    Args:
+        state_dict: Model state dict to shard
+        pack_factor: AWQ pack factor (8 for 4-bit), used for proper sharding
+    """
     shard_state_dict: Dict[str, torch.Tensor] = {}
     tp_info = get_tp_info()
     r = tp_info.rank
     n = tp_info.size
 
+    # Weights where output dimension is sharded (column parallel)
     SPLIT_DIM_0_LIST = [
         ".q_proj",
         ".k_proj",
@@ -62,17 +60,34 @@ def _shard_state_dict(
         ".up_proj",
     ]
 
+    # Weights where input dimension is sharded (row parallel)
     SPLIT_DIM_1_LIST = [
         ".o_proj",
         ".down_proj",
     ]
 
     for key, value in state_dict.items():
+        is_awq = _is_awq_weight(key)
+        is_qzeros = key.endswith(".qzeros")
+
         if any(key.count(sub) for sub in SPLIT_DIM_0_LIST):
-            shard_state_dict[key] = value.chunk(n, dim=0)[r]
+            if is_awq:
+                # AWQ: output features are on dim 1, shard there
+                # For qzeros, output dim is packed: out_features // pack_factor
+                shard_state_dict[key] = value.chunk(n, dim=1)[r]
+            else:
+                # Standard: output features are on dim 0
+                shard_state_dict[key] = value.chunk(n, dim=0)[r]
 
         elif any(key.count(sub) for sub in SPLIT_DIM_1_LIST):
-            shard_state_dict[key] = value.chunk(n, dim=1)[r]
+            if is_awq:
+                # AWQ: input features are on dim 0
+                # For qweight, input dim is packed: in_features // pack_factor
+                # For qzeros/scales, input dim is grouped: in_features // group_size
+                shard_state_dict[key] = value.chunk(n, dim=0)[r]
+            else:
+                # Standard: input features are on dim 1
+                shard_state_dict[key] = value.chunk(n, dim=1)[r]
 
         elif key.count("lm_head") or key.count("embed_tokens"):
             num_embeddings = value.shape[0]
