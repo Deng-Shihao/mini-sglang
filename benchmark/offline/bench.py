@@ -18,7 +18,10 @@ def main():
     # num_seqs = 1 306.70tok/s
     # num_seqs = 256 256 5244.43tok/s
     llm = LLM(
-        "Qwen/Qwen3-0.6B", max_seq_len_override=4096, max_extend_tokens=16384, cuda_graph_max_bs=256
+        "Qwen/Qwen3-0.6B",
+        max_seq_len_override=4096,
+        max_extend_tokens=16384,
+        cuda_graph_max_bs=256
     )
 
     # num_seqs = 1   80.87tok/s

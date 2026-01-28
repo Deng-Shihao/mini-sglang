@@ -66,9 +66,15 @@ def _shard_state_dict(
         ".down_proj",
     ]
 
+    # Weights that should NOT be sharded (replicated across all ranks)
+    NO_SHARD_LIST = [
+        "input_layernorm",
+        "post_attention_layernorm",
+        ".norm.weight",  # Final norm layer
+    ]
+
     for key, value in state_dict.items():
         is_awq = _is_awq_weight(key)
-        is_qzeros = key.endswith(".qzeros")
 
         if any(key.count(sub) for sub in SPLIT_DIM_0_LIST):
             if is_awq:
@@ -96,7 +102,12 @@ def _shard_state_dict(
             vocab_end_idx = min((r + 1) * num_embeddings_per_partition, num_embeddings)
             shard_state_dict[key] = value[vocab_start_idx:vocab_end_idx, :]
 
+        elif any(pattern in key for pattern in NO_SHARD_LIST):
+            # Norm layers: replicate across all ranks (no sharding)
+            shard_state_dict[key] = value
+
         else:
+            # Unknown weight, replicate by default
             shard_state_dict[key] = value
 
     return shard_state_dict
