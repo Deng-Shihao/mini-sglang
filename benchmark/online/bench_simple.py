@@ -31,9 +31,9 @@ async def main():
                 await asyncio.sleep(0)
             return result
 
-        TEST_BS = [64]
+        TEST_BS = [256]
         PORT = 1919
-        MAX_INPUT = 8192
+        MAX_INPUT = 1024
         # Create the async client
         async with OpenAI(base_url=f"http://127.0.0.1:{PORT}/v1", api_key="") as client:
             MODEL = await get_model_name(client)
