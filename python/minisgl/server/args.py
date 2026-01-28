@@ -201,6 +201,7 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     # Parse arguments
+    # same parser.parse_args(sys.argv[1:])
     kwargs = parser.parse_args(args).__dict__.copy()
 
     # resolve some arguments
